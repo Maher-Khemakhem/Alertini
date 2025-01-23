@@ -1,6 +1,6 @@
 ## First dataset
 
-    (https://www.kaggle.com/datasets/reihanenamdari/youtube-toxicity-data)
+    https://www.kaggle.com/datasets/reihanenamdari/youtube-toxicity-data
 
 ## First dataset
 
