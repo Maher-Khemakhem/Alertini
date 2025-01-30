@@ -12,4 +12,7 @@ export class CrudService {
   getarticles(): Observable<any> {
     return this.http.get<any>(`${this.baseurl}/articles/`, { withCredentials: true });
   }
+  getNotifications(): Observable<any> {
+    return this.http.get<any>(`${this.baseurl}/notifications/`, { withCredentials: true });
+  }
 }

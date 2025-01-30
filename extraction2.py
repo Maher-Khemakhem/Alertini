@@ -8,7 +8,7 @@ import re
 
 
 class EuronewsScraper:
-    def __init__(self, base_url="https://www.euronews.com/news/africa/tunisia"):
+    def __init__(self, base_url="https://www.euronews.com/news/europe/france"):
         self.base_url = base_url
         self.logger = logging.getLogger(__name__)
         logging.basicConfig(
@@ -18,7 +18,7 @@ class EuronewsScraper:
         self.db_config = {
             "host": "localhost",
             "user": "root",
-            "password": "",  # Ensure password security
+            "password": "asus-1971",  # Ensure password security
             "db": "projdata",
         }
 
@@ -201,8 +201,8 @@ class EuronewsScraper:
                 try:
                     await cur.execute(
                     """
-                    INSERT INTO comments (comment, username, user_id, timestamp, article_id)
-                    VALUES (%s, %s, %s, %s, %s);
+                    INSERT INTO comments (comment, username, user_id, timestamp, article_id, created_at)
+                    VALUES (%s, %s, %s, %s, %s, NOW());
                     """,
                     (
                         self.clean_text(comment["comment"]),

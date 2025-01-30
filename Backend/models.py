@@ -21,5 +21,5 @@ class Comment(Base):
     user_id = Column(String(100))
     timestamp = Column(DateTime)
     article_id = Column(Integer, ForeignKey("articles.id"))
-
+    created_at = Column(DateTime)
     article = relationship("Article", back_populates="comments")

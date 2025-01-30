@@ -5,9 +5,12 @@ from sqlalchemy.exc import SQLAlchemyError
 # Replace with your MySQL connection details
 DATABASE_URL = "mysql+aiomysql://root:asus-1971@localhost/projdata"
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+engine = create_async_engine(DATABASE_URL, echo=True,pool_size=10,         # Set a pool size suitable for your application
+    max_overflow=20,      # Allow the pool to expand when needed
+    pool_timeout=30,      # Timeout for obtaining a connection
+    pool_recycle=3600 )
 async_session = sessionmaker(
-    engine, class_=AsyncSession, expire_on_commit=False
+    engine, class_=AsyncSession, expire_on_commit=False,
 )
 
 Base = declarative_base()
