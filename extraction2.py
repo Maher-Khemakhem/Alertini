@@ -5,8 +5,19 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import logging
 import re
+import pickle
+from tensorflow.keras.models import load_model
+from sklearn.feature_extraction.text import TfidfVectorizer
+import pandas as pd
+
+df = pd.read_csv('comments_data.csv')
+
+# Load the TF-IDF vectorizer
+with open('tfidf_vectorizer.pkl', 'rb') as f:
+    loaded_vectorizer = pickle.load(f)
 
 
+loaded_model = load_model('toxic_comment_prediction_model.h5')
 class EuronewsScraper:
     def __init__(self, base_url="https://www.euronews.com/news/europe/france"):
         self.base_url = base_url
@@ -54,7 +65,13 @@ class EuronewsScraper:
         """Clean and sanitize text."""
         if not text:
             return None
+    
+    # Remove <p> and </p> tags
+        text = re.sub(r'</?p>', '', text)
+    
+    # Normalize spaces
         cleaned = re.sub(r'\s+', ' ', text).strip()
+    
         return cleaned if cleaned else None
 
     async def extract_article_urls(self, html):
@@ -198,11 +215,24 @@ class EuronewsScraper:
     async def insert_comments(self, conn, article_id, comments):
         async with conn.cursor() as cur:
             for comment in comments:
+                
+                commentt = comment["comment"]
+                processed_comments = loaded_vectorizer.transform([commentt])
+
+    # Convert sparse matrix to dense array for Keras
+                processed_comments_dense = processed_comments.toarray()
+
+    # Make predictions asynchronously
+                predictions = await asyncio.to_thread(loaded_model.predict, processed_comments_dense)
+                predictions = (predictions > 0.5).astype(int)
+                print("aaaaaaaa ",bool(predictions))
+                ans = int(predictions[0][0])
+                
                 try:
                     await cur.execute(
                     """
-                    INSERT INTO comments (comment, username, user_id, timestamp, article_id, created_at)
-                    VALUES (%s, %s, %s, %s, %s, NOW());
+                    INSERT INTO comments (comment, username, user_id, timestamp, article_id, created_at,is_toxic)
+                    VALUES (%s, %s, %s, %s, %s, NOW(),%s);
                     """,
                     (
                         self.clean_text(comment["comment"]),
@@ -210,6 +240,7 @@ class EuronewsScraper:
                         comment["user_id"],
                         comment["timestamp"],
                         article_id,
+                        ans
                     ),
                 )
                 except Exception as e:
@@ -228,12 +259,13 @@ class EuronewsScraper:
         finally:
             conn.close()
 
-    async def continuous_scrape(self, interval=300, num_pages=1):
+    async def continuous_scrape(self, interval=30, num_pages=4):
         """Continuously scrape the website at regular intervals."""
         try:
             while True:
                 self.logger.info("Starting scraping cycle...")
                 articles = await self.scrape_articles(num_pages)
+                print(articles)
                 await self.save_to_database(articles)
                 self.logger.info("Scraping cycle completed. Waiting for next cycle...")
                 await asyncio.sleep(interval)

@@ -1,6 +1,6 @@
 import { HttpClient } from '@angular/common/http';
 import { Injectable } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, switchMap, timer } from 'rxjs';
 
 @Injectable({
   providedIn: 'root'
@@ -15,4 +15,10 @@ export class CrudService {
   getNotifications(): Observable<any> {
     return this.http.get<any>(`${this.baseurl}/notifications/`, { withCredentials: true });
   }
+  getPositiveComments(): Observable<any> {
+    return timer(0, 10000).pipe( // Start immediately, then every 10 seconds
+      switchMap(() => this.http.get<any>(`${this.baseurl}/positive-comments/`, { withCredentials: true }))
+    );
+  }
+  
 }

@@ -1,4 +1,8 @@
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
+from email.mime.text import MIMEText
+import json
+import smtplib
 from typing import List
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
@@ -15,7 +19,7 @@ from .models import Comment, Article
 from .crud import get_articles, get_comments_article
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text  # Import the text function
-
+from email.mime.multipart import MIMEMultipart
 app = FastAPI()
 
 # CORS settings for Angular frontend
@@ -47,10 +51,12 @@ notification_queue = asyncio.Queue()
 class CommentInput(BaseModel):
     content: str
 
+
+
 @app.post("/comments/")
-async def add_comment(comment: CommentInput, db: AsyncSession = Depends(get_db)):
+async def is_it_toxic(comment: CommentInput):
     """
-    Endpoint to add a comment and check if it's toxic.
+    Endpoint to check if a comment is toxic.
     """
     # Process the comment
     comments = comment.content
@@ -63,61 +69,104 @@ async def add_comment(comment: CommentInput, db: AsyncSession = Depends(get_db))
     predictions = await asyncio.to_thread(loaded_model.predict, processed_comments_dense)
     predictions = (predictions > 0.5).astype(int)
 
-    # Check if the comment is toxic
-    is_toxic = bool(predictions)
+    return bool(predictions)
+active_connections: set[WebSocket] = set()
 
-    # Send a notification if the comment is toxic
-    if is_toxic:
-        await notification_queue.put({"content": comment.content, "toxic": True})
-
-    return {
-        "comment": comment.content,
-        "toxic": is_toxic,
-        "message": "Comment added successfully."
-    }
-
-active_connections: List[WebSocket] = []
-
-# WebSocket endpoint to listen for notifications
 @app.websocket("/ws/notifications/")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    active_connections.append(websocket)
+    active_connections.add(websocket)  # Use set for uniqueness
     try:
         while True:
-            # Keep the connection open
-            await asyncio.sleep(3600)  # Sleep for 1 hour, WebSocket will remain open
+            await asyncio.sleep(3600)  # Keep connection open
     except WebSocketDisconnect:
-        active_connections.remove(websocket)
+        print("Client disconnected")
+    finally:
+        active_connections.discard(websocket)  # Cleanup disconnected client
 
-last_processed_comment_time = datetime.now()
-print(f"Last processed time (UTC): {last_processed_comment_time}")
+
+
+
 
 # Function to periodically check for new comments
+port = 587
+smtp_server = "smtp.gmail.email"
+login = "maher.khemakhem@etudiant-fst.utm.tn"
+password = "maherfiras"
+sender_email = "maher.khemakhem@etudiant-fst.utm.tn"
+to_email = "khemakhemmaher2003@gmail.com"
+
+# Track last processed comment time
+last_processed_comment_time = (datetime.now() - timedelta(days=2)).replace(second=0, microsecond=0)
+print(f"Last processed time (UTC): {last_processed_comment_time}")
+processed_comments = set()  # Store processed comment texts
+
+@app.get("/send-email")
+async def send_email(contenu: str):
+    """ Sends an email notification. """
+    message = MIMEMultipart("alternative")
+    message["From"] = sender_email
+    message["To"] = to_email
+    message["Subject"] = "New Comment Notification"
+
+    html = f"""
+        <html>
+        <body>
+            <p>{contenu}</p>
+        </body>
+        </html>
+    """
+    part = MIMEText(html, "html")
+    message.attach(part)
+
+    try:
+        server = smtplib.SMTP(smtp_server, port)
+        server.starttls()  # Secure connection
+        server.login(login, password)
+        server.sendmail(sender_email, to_email, message.as_string())
+        server.quit()
+    except Exception as e:
+        print(f"Error sending email: {e}")
+
 async def check_new_comments():
+    """ Periodically checks for new comments and sends notifications. """
     global last_processed_comment_time
+
     while True:
-        # Use 'await' to handle the async generator
-        async for db in get_db():  # Fetch session here with async for
+        async for db in get_db():  # Fetch database session
             new_comments = await get_new_comments(last_processed_comment_time, db)
+            print(new_comments)
+            for comment in new_comments:
+                comment_text = comment["comment"]
+                message = json.dumps({"message": f"New comment: {comment_text}"})
+                is_toxic = comment["is_toxic"]
+                for websocket in active_connections :
+                        if comment_text not in processed_comments and is_toxic:
+                            print(comment_text)
+                            await websocket.send_text(message)
+                            processed_comments.add(comment_text)
+                    
+                    
+                    # Send email notification
+                    #await send_email(comment_text)
 
-            if new_comments:
-                for websocket in active_connections:
-                    for comment in new_comments:
-                        await websocket.send_text(f"New comment: {comment['comment']}")
+                    # Send websocket notification
+                    
+                    
 
-                last_processed_comment_time = datetime.now()
+            # Update the timestamp after processing new comments
+            last_processed_comment_time = (datetime.now() - timedelta(days=2)).replace(second=0, microsecond=0)
 
-        await asyncio.sleep(5)  # Poll every 5 seconds
 
-# Fetch new comments from the database
+        await asyncio.sleep(50)  # Poll every 50 seconds
+        # Fetch new comments from the database
 
 async def get_new_comments(last_processed_time: datetime, db: AsyncSession) -> List[dict]:
     # Your datetime value (this can be dynamically assigned based on your needs)
-    last_processed_time = datetime(2025, 1, 30, 21, 2, 18, 513207)
+    #last_processed_time = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Wrap your SQL query with the text function
-    query = text("SELECT comments.id, comments.comment, comments.username, comments.user_id, comments.timestamp, comments.article_id, comments.created_at FROM comments WHERE comments.created_at > :last_processed_time")
+    query = text("SELECT comments.id, comments.comment, comments.username, comments.user_id, comments.timestamp, comments.article_id, comments.created_at,comments.is_toxic FROM comments WHERE comments.created_at > :last_processed_time")
 
     # Execute the query, passing the last_processed_time as a parameter
     result = await db.execute(query, {'last_processed_time': last_processed_time})
@@ -129,7 +178,7 @@ async def get_new_comments(last_processed_time: datetime, db: AsyncSession) -> L
     print(f"Retrieved {len(comments)} new comments")
 
     # Return the comments in the desired format
-    return [{"comment": comment.comment, "username": comment.username} for comment in comments]
+    return [{"comment": comment.comment, "username": comment.username,"is_toxic":comment.is_toxic} for comment in comments]
 
 @app.on_event("startup")
 async def startup_event():
@@ -154,3 +203,44 @@ async def read_comments(id: int, db: AsyncSession = Depends(get_db)):
     comments = await get_comments_article(db, id)
     
     return {"article_id": id, "comments": comments}
+
+@app.get("/positive-comments")
+async def positive(db: AsyncSession = Depends(get_db)):
+    query = text("SELECT is_toxic, DATE(created_at) FROM comments")  # Extract only date
+    result = await db.execute(query)
+    comments_data = result.fetchall()
+
+    pos_counts = defaultdict(int)
+    neg_counts = defaultdict(int)
+
+    for is_toxic, date in comments_data:
+        if not is_toxic:
+            pos_counts[date] += 1
+        else:
+            neg_counts[date] += 1
+
+    timestamps = sorted(set(pos_counts.keys()) | set(neg_counts.keys()))  # Merge unique dates
+
+    positive_counts = [pos_counts[date] for date in timestamps]
+    negative_counts = [neg_counts[date] for date in timestamps]
+
+    return {"timestamps": timestamps, "pos": positive_counts, "neg": negative_counts}
+
+
+
+# WebSocket endpoint to send positive comments data
+
+
+@app.post("/set")
+async def sett(db: AsyncSession = Depends(get_db)):
+    query = text("SELECT id, comment FROM comments")  # Extract only necessary fields
+    result = await db.execute(query)
+    comments_data = result.fetchall()
+
+    for id, comment in comments_data:
+        if await is_it_toxic(CommentInput(content=comment)):
+            update_query = text("UPDATE comments SET is_toxic=1 WHERE id=:id")
+            await db.execute(update_query, {"id": id})
+    
+    await db.commit()  # Commit the changes to the database
+

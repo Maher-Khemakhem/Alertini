@@ -9,7 +9,8 @@ class CommentSchema(BaseModel):
     user_id: str
     timestamp: datetime
     article_id: int
-
+    created_at:datetime
+    is_toxic:bool
     class Config:
         orm_mode = True
 
