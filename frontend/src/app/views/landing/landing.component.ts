@@ -6,6 +6,8 @@ import 'chartjs-chart-matrix';
 import { MatrixController, MatrixElement } from 'chartjs-chart-matrix';
 import { WebSocketService } from '../../services/websocket.service';
 import { Subscription } from 'rxjs';
+import { Router } from '@angular/router';
+import { CommonModule } from '@angular/common';
 
 Chart.register(...registerables);
 
@@ -29,7 +31,9 @@ export type ChartOptions = {
 @Component({
   selector: 'app-landing',
   templateUrl: './landing.component.html',
-  styleUrls: ['./landing.component.css']
+  styleUrls: ['./landing.component.css'],
+   imports: [CommonModule]
+
 })
 export class LandingComponent implements OnInit, AfterViewInit {
   @ViewChild('chartContainer', { static: false }) chartContainer!: ElementRef;
@@ -45,11 +49,32 @@ export class LandingComponent implements OnInit, AfterViewInit {
   heatmapChart!: Chart;
   nbpos: number = 0;
   nbneg: number = 0;
-  dropdownOpen = false; // Handle dropdown manually
+  dropdownOpen = true; // Handle dropdown manually
   private wsSubscription!: Subscription;
-  constructor(private crudservice: CrudService,private webSocketService: WebSocketService) {}
+  open = false; 
+  notifications: any[] = [];
+  private countSubscription!: Subscription;
+  isOpen = false;
+  number:any=0;
+  visible=false;
+  constructor(private crudservice: CrudService,private webSocketService: WebSocketService,private router:Router) {}
 
-  ngOnInit(): void {}
+  ngOnInit(): void {
+    this.visible = false;
+    console.log(this.visible);
+    this.wsSubscription = this.webSocketService.getMessages().subscribe((messages) => {
+      console.log("📨 Updated Notifications:", messages);
+      this.notifications = [...messages]; // Most recent messages on top
+      if(this.notifications.length>0){
+        this.show();
+      console.log(this.visible);
+      }
+      
+    });
+    this.countSubscription = this.webSocketService.getNumber().subscribe((nb: number) => {
+      this.number = nb;
+    });
+  }
 
   ngAfterViewInit(): void {
     this.initChart();
@@ -186,5 +211,39 @@ export class LandingComponent implements OnInit, AfterViewInit {
 
   toggleDropdown(): void {
     this.dropdownOpen = !this.dropdownOpen;
+  }
+  gotonotifications(){
+    this.router.navigate(["/notifications"]);;
+  }
+  opendropdown(){
+    this.open = !this.open;
+    console.log(this.open);
+  }
+  ngOnDestroy(): void {
+    if (this.wsSubscription) {
+      this.wsSubscription.unsubscribe();
+      console.log("🔌 WebSocket subscription unsubscribed");
+    }
+  }
+
+  toggleNotification(): void {
+    this.isOpen = !this.isOpen;
+  }
+
+  removeNotification(): void {
+    if (this.notifications.length > 0) {
+      this.webSocketService.removeMessage(); // Remove the most recent message
+    }
+  }
+  nulliha(){
+    this.number = 0;
+  }
+  close(){
+    this.visible = false;
+    console.log(this.visible);
+  }
+  show() {
+    this.visible = true;
+    setTimeout(() => this.close(), 3000); // auto close after 3 seconds
   }
 }

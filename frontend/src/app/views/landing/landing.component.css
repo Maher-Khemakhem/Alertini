@@ -1,0 +1,16 @@
+.custom-navbar {
+    background-color: #825ee4; /* Replace with your desired color */
+  }
+  .relative {
+    position: relative; /* Ensures dropdown is positioned relative to this container */
+}
+
+.absolute {
+    position: absolute; /* Positions the dropdown absolutely */
+}
+#toast-notification {
+    position: fixed;
+    top: 500px;
+    right: 20px;
+    z-index: 1000;
+  }

@@ -14,7 +14,7 @@ export class WebSocketService implements OnDestroy {
 
   constructor() {
     this.connect();
-    this.reconnect();
+    //this.reconnect();
   }
 
   /**
@@ -29,35 +29,41 @@ export class WebSocketService implements OnDestroy {
 
     this.socket.onmessage = (event) => {
       console.log("📩 Raw WebSocket message received:", event.data);
-
+    
       try {
         const data = JSON.parse(event.data); // Parse JSON message
-
+        const receivedTime = Date.now(); // Current time in milliseconds
         if (!this.messageExists(data)) {
-          // Prepend new message so the newest is at the top.
           this.messagesStack.unshift(data);
-          // Emit the updated stack.
           this.messagesSubject.next([...this.messagesStack]);
-          // Update the count.
           this.numberSubject.next(this.messagesStack.length);
         } else {
           console.log("⚠️ Duplicate message ignored:", data);
         }
+        if (data.timestamp) {
+          let serverTimestamp = Number(data.timestamp); // Convert to number
+    
+          if (!isNaN(serverTimestamp)) {
+            // Check if the server timestamp is in seconds (UNIX timestamp)
+            console.log(serverTimestamp);
+            console.log(receivedTime);
+    
+            const latencyInSeconds = (receivedTime - serverTimestamp) / 1000;
+            console.log(`⏱ Latency: ${latencyInSeconds.toFixed(4)} s`);
+          } else {
+            console.warn("⚠️ Invalid timestamp format received:", data.timestamp);
+          }
+        }
       } catch (error) {
         console.error("❌ Invalid JSON received:", event.data, error);
       }
+      
     };
-
-    this.socket.onerror = (error) => {
-      console.error("❌ WebSocket error:", error);
-      this.reconnect();
-    };
+    
 
     this.socket.onclose = (event) => {
-      console.warn(
-        `⚠️ WebSocket closed (Code: ${event.code}, Reason: ${event.reason}). Reconnecting in ${this.reconnectInterval / 1000}s...`
-      );
-      this.reconnect();
+      console.warn(`⚠️ WebSocket closed (Code: ${event.code}). Attempting reconnect...`);
+      setTimeout(() => this.connect(), this.reconnectInterval);  // Attempt reconnection
     };
   }
 
@@ -89,7 +95,6 @@ export class WebSocketService implements OnDestroy {
     }, this.reconnectInterval);
   }
   
-
   /**
    * Returns an observable of the current message stack.
    */

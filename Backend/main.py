@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 import json
 import smtplib
@@ -71,20 +71,27 @@ async def is_it_toxic(comment: CommentInput):
 
     return bool(predictions)
 active_connections: set[WebSocket] = set()
-
+timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+processed_comments = set() 
 @app.websocket("/ws/notifications/")
 async def websocket_endpoint(websocket: WebSocket):
+    global timestamp
     await websocket.accept()
-    active_connections.add(websocket)  # Use set for uniqueness
+    active_connections.add(websocket)
+    timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+
     try:
         while True:
-            await asyncio.sleep(3600)  # Keep connection open
+            data = await websocket.receive_text()  # Keep the connection alive
+            print(f"Received from client: {data}") 
+            await asyncio.sleep(1)
     except WebSocketDisconnect:
-        print("Client disconnected")
+        print(f"Client {websocket} disconnected")
+        active_connections.discard(websocket)  # Remove the disconnected client
     finally:
-        active_connections.discard(websocket)  # Cleanup disconnected client
-
-
+        if not active_connections:
+            processed_comments.clear()  # Clear processed comments if no clients are connected
+            print("All clients disconnected, processed_comments cleared.")
 
 
 
@@ -99,7 +106,7 @@ to_email = "khemakhemmaher2003@gmail.com"
 # Track last processed comment time
 last_processed_comment_time = (datetime.now() - timedelta(days=2)).replace(second=0, microsecond=0)
 print(f"Last processed time (UTC): {last_processed_comment_time}")
-processed_comments = set()  # Store processed comment texts
+ # Store processed comment texts
 
 @app.get("/send-email")
 async def send_email(contenu: str):
@@ -131,22 +138,32 @@ async def send_email(contenu: str):
 async def check_new_comments():
     """ Periodically checks for new comments and sends notifications. """
     global last_processed_comment_time
-
+    global timestamp
+    
     while True:
+        #processed_comments.clear()
         async for db in get_db():  # Fetch database session
             new_comments = await get_new_comments(last_processed_comment_time, db)
             print(new_comments)
             for comment in new_comments:
                 comment_text = comment["comment"]
-                message = json.dumps({"message": f"New comment: {comment_text}"})
+                
+                    # Include the timestamp in the JSON message.
+                message = json.dumps({
+                        "message": f"New comment: {comment_text}",
+                        "timestamp": timestamp
+                    })
                 is_toxic = comment["is_toxic"]
-                for websocket in active_connections :
+                #print(active_connections)
+                for websocket in list(active_connections):
+                        
                         if comment_text not in processed_comments and is_toxic:
                             print(comment_text)
                             await websocket.send_text(message)
                             processed_comments.add(comment_text)
                     
-                    
+                            timestamp = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+
                     # Send email notification
                     #await send_email(comment_text)
 
@@ -158,7 +175,7 @@ async def check_new_comments():
             last_processed_comment_time = (datetime.now() - timedelta(days=2)).replace(second=0, microsecond=0)
 
 
-        await asyncio.sleep(50)  # Poll every 50 seconds
+        await asyncio.sleep(10)  # Poll every 50 seconds
         # Fetch new comments from the database
 
 async def get_new_comments(last_processed_time: datetime, db: AsyncSession) -> List[dict]:
