@@ -244,6 +244,6 @@ export class LandingComponent implements OnInit, AfterViewInit {
   }
   show() {
     this.visible = true;
-    setTimeout(() => this.close(), 3000); // auto close after 3 seconds
+    setTimeout(() => this.close(), 6000); // auto close after 3 seconds
   }
 }

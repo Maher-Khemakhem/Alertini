@@ -231,8 +231,11 @@ class EuronewsScraper:
                 try:
                     await cur.execute(
                     """
-                    INSERT INTO comments (comment, username, user_id, timestamp, article_id, created_at,is_toxic)
-                    VALUES (%s, %s, %s, %s, %s, NOW(),%s);
+                    INSERT INTO comments (comment, username, user_id, timestamp, article_id, created_at, is_toxic)
+                    VALUES (%s, %s, %s, %s, %s, NOW(), %s)
+                    ON DUPLICATE KEY UPDATE 
+                    timestamp = VALUES(timestamp), 
+                    is_toxic = VALUES(is_toxic);
                     """,
                     (
                         self.clean_text(comment["comment"]),
@@ -259,7 +262,7 @@ class EuronewsScraper:
         finally:
             conn.close()
 
-    async def continuous_scrape(self, interval=30, num_pages=4):
+    async def continuous_scrape(self, interval=30, num_pages=6):
         """Continuously scrape the website at regular intervals."""
         try:
             while True:
