@@ -29,7 +29,7 @@ class EuronewsScraper:
         self.db_config = {
             "host": "localhost",
             "user": "root",
-            "password": "asus-1971",  # Ensure password security
+            "password": "",  # Ensure password security
             "db": "projdata",
         }
 
